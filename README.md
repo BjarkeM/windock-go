@@ -21,6 +21,8 @@ profile during a drag, with a few colors to make everything more legible.
 
 **Configuration preview** The configuration of (new) zones in WinDock was a bit complicated as a new user, so windock-go brings a bit of a visual upgrade.
 
+![Windock-Go Settings UI](windock-go.png)
+
 ## Install
 
 ```
