@@ -64,6 +64,7 @@ type SettingsWindow struct {
 	cbMaximize  *walk.CheckBox
 	cbPreview   *walk.CheckBox
 	cbGuides    *walk.CheckBox
+	cbOnHit     *walk.CheckBox
 	cbColors    *walk.CheckBox
 
 	// loading suppresses the change handlers while the checkboxes are being
@@ -137,7 +138,10 @@ func (a *App) openSettings() error {
 
 					d.CheckBox{Row: 1, Column: 2, AssignTo: &s.cbPreview, Text: "Show zone preview", OnCheckedChanged: s.onCheckChanged},
 					d.CheckBox{Row: 2, Column: 2, AssignTo: &s.cbGuides, Text: "Show trigger guides", OnCheckedChanged: s.onCheckChanged},
-					d.CheckBox{Row: 3, Column: 2, AssignTo: &s.cbColors, Text: "A colour per trigger", OnCheckedChanged: s.onCheckChanged},
+					d.CheckBox{Row: 3, Column: 2, AssignTo: &s.cbOnHit, Text: "Guides only once a zone is hit", OnCheckedChanged: s.onCheckChanged,
+						ToolTipText: "Keep the guides hidden until the drag actually reaches a trigger, " +
+							"instead of marking every trigger for the whole drag."},
+					d.CheckBox{Row: 4, Column: 2, AssignTo: &s.cbColors, Text: "A colour per trigger", OnCheckedChanged: s.onCheckChanged},
 
 					d.CheckBox{Row: 1, Column: 4, AssignTo: &s.cbAutostart, Text: "Start with Windows", OnCheckedChanged: s.onCheckChanged},
 				},
@@ -271,8 +275,18 @@ func (s *SettingsWindow) loadGeneral() {
 	s.cbMaximize.SetChecked(g.MaximizeFullWindow)
 	s.cbPreview.SetChecked(g.PreviewEnabled())
 	s.cbGuides.SetChecked(g.GuidesEnabled())
+	s.cbOnHit.SetChecked(g.GuidesRevealOnHit())
 	s.cbColors.SetChecked(g.CategoricalColors())
 	s.cbAutostart.SetChecked(s.autostartDraft)
+	s.syncGuideDependants()
+}
+
+// syncGuideDependants greys out the settings that only mean something while
+// the guides are drawn at all.
+func (s *SettingsWindow) syncGuideDependants() {
+	if s.cbOnHit != nil && s.cbGuides != nil {
+		s.cbOnHit.SetEnabled(s.cbGuides.Checked())
+	}
 }
 
 // storeGeneral copies the checkboxes back into the draft.
@@ -282,6 +296,7 @@ func (s *SettingsWindow) storeGeneral() {
 	g.MaximizeFullWindow = s.cbMaximize.Checked()
 	g.ShowPreview = boolPtr(s.cbPreview.Checked())
 	g.ShowTriggerGuides = boolPtr(s.cbGuides.Checked())
+	g.GuidesOnHit = boolPtr(s.cbOnHit.Checked())
 	g.UseCategoricalColors = boolPtr(s.cbColors.Checked())
 	s.autostartDraft = s.cbAutostart.Checked()
 }
@@ -293,6 +308,7 @@ func (s *SettingsWindow) onCheckChanged() {
 		return
 	}
 	s.storeGeneral()
+	s.syncGuideDependants()
 	s.setDirty()
 	// Two of these change what the map shows: the colour scheme, and whether
 	// docks stop at the taskbar.

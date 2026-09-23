@@ -69,6 +69,10 @@ type Engine struct {
 
 	drag dragState
 
+	// winSnapSuppressed records that we turned Windows' own drag-to-edge
+	// snapping off and owe the user a restore. See arranging.go.
+	winSnapSuppressed bool
+
 	// lastCfgMod lets the mtime poller notice hand edits to profile.json.
 	lastCfgMod time.Time
 }
@@ -80,6 +84,10 @@ type dragState struct {
 	// zoneIdx mirrors zone as an index into the layout, which is what the
 	// guide overlay needs in order to highlight one trigger.
 	zoneIdx int
+
+	// guidesUp records that the guides are showing for this drag. In hit mode
+	// that only happens once the drag has entered a trigger.
+	guidesUp bool
 }
 
 // current is the process-wide engine: the Win32 callbacks below are plain
@@ -135,6 +143,10 @@ func (e *Engine) Run(ctx context.Context) error {
 
 	e.guides = newGuides()
 	defer e.guides.destroy()
+
+	// Windows' own snapping stays out of the way for as long as we dock.
+	e.syncWindowsSnap()
+	defer e.restoreWindowsSnap()
 
 	e.refreshDisplays("startup")
 
@@ -299,9 +311,14 @@ func (e *Engine) onMoveSizeStart(hwnd win.HWND) {
 	}
 	e.drag = dragState{active: true, hwnd: hwnd, zoneIdx: -1}
 	e.startMouseHook()
-	// Show every trigger as soon as the drag begins, so the targets are
-	// visible before the cursor reaches one.
-	e.guides.show()
+	if !e.cfg.GlobalSettings.GuidesRevealOnHit() {
+		// Show every trigger as soon as the drag begins, so the targets are
+		// visible before the cursor reaches one.
+		e.guides.show()
+		e.drag.guidesUp = true
+	}
+	// In hit mode this is what reveals the guides when a drag starts with the
+	// cursor already inside a trigger.
 	e.updatePreview(win.GetCursorPos())
 }
 
@@ -338,7 +355,9 @@ func (e *Engine) updatePreview(p win.POINT) {
 	if !e.drag.active {
 		return
 	}
+
 	idx := e.layout.MatchIndex(p)
+	e.revealGuides(idx)
 	if idx == e.drag.zoneIdx {
 		return
 	}
@@ -353,6 +372,19 @@ func (e *Engine) updatePreview(p win.POINT) {
 	zone := &e.layout.Zones()[idx]
 	e.drag.zone = zone
 	e.overlay.show(zone.Dock, e.slotFor(idx))
+}
+
+// revealGuides brings the guides up the first time the drag actually hits a
+// trigger. A drag that never reaches one was never meant to snap anything, so
+// it leaves the edges dark. Once one trigger has been hit they stay up for the
+// rest of the drag: dropping them again whenever the cursor wandered back into
+// open space would leave the edges flashing on and off across a long drag.
+func (e *Engine) revealGuides(zoneIndex int) {
+	if e.drag.guidesUp || zoneIndex < 0 {
+		return
+	}
+	e.drag.guidesUp = true
+	e.guides.show()
 }
 
 // slotFor returns the palette slot of a zone, defaulting to the first colour if
@@ -580,6 +612,7 @@ func (e *Engine) reloadConfig() {
 	e.guides.rebuild(e.mons, e.layout, e.cfg.GlobalSettings, e.slots)
 	e.cancelDrag()
 	e.syncOverlay()
+	e.syncWindowsSnap()
 	e.log.Info("configuration reloaded",
 		"profile", e.activeProfileName(),
 		"zones", e.layout.Len(),

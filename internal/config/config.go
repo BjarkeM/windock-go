@@ -86,6 +86,12 @@ type Global struct {
 	// GuideThicknessPx is how thick the guides are drawn. This is presentation
 	// only: the region that actually triggers is EdgeThicknessPx deep.
 	GuideThicknessPx int `json:"guide_thickness_px,omitempty"`
+
+	// GuidesOnHit holds the guides back until the drag has actually entered a
+	// trigger. A drag never meant to snap anything then never lights the edges
+	// up at all; once one trigger has been hit the guides stay up for the rest
+	// of that drag, so they do not flicker as the cursor wanders between zones.
+	GuidesOnHit *bool `json:"guides_on_hit,omitempty"`
 }
 
 // Profile is one named set of rules. An exported single-profile file, such as
@@ -197,6 +203,16 @@ func (g Global) GuideThickness() int {
 		return DefaultGuideThickness
 	}
 	return g.GuideThicknessPx
+}
+
+// GuidesRevealOnHit reports whether the guides wait for the drag to reach a
+// trigger. On by default: a drag across the desk that was never meant to snap
+// anything has no business lighting up every edge of every screen.
+func (g Global) GuidesRevealOnHit() bool {
+	if g.GuidesOnHit == nil {
+		return true
+	}
+	return *g.GuidesOnHit
 }
 
 // ActiveRules returns the rules of the currently selected profile, or nil if
@@ -435,6 +451,7 @@ func (f *File) Clone() *File {
 	out.GlobalSettings.UseWorkArea = clonePtr(f.GlobalSettings.UseWorkArea)
 	out.GlobalSettings.ShowTriggerGuides = clonePtr(f.GlobalSettings.ShowTriggerGuides)
 	out.GlobalSettings.UseCategoricalColors = clonePtr(f.GlobalSettings.UseCategoricalColors)
+	out.GlobalSettings.GuidesOnHit = clonePtr(f.GlobalSettings.GuidesOnHit)
 
 	for i, p := range f.Profiles {
 		out.Profiles[i] = Profile{

@@ -98,7 +98,15 @@ func newGuides() *guides { return &guides{active: -1} }
 
 // rebuild recreates one window per monitor and recomputes the shapes. It is
 // called whenever the layout or the display topology changes.
+//
+// Tolerates a nil receiver, like the overlay does: the notification window
+// exists before Run builds the guides, so a WM_DISPLAYCHANGE or
+// WM_SETTINGCHANGE arriving in that gap reaches refreshDisplays with nothing
+// to rebuild yet. Run rebuilds them itself a moment later.
 func (g *guides) rebuild(mons *monitor.Set, layout *zones.Layout, cfg config.Global, slots []int) {
+	if g == nil {
+		return
+	}
 	g.destroy()
 	g.active = -1
 

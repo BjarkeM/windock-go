@@ -18,6 +18,19 @@ destination and snaps on release - similar to what FancyZones does.
 
 **Guides while dragging.** This marks every edge trigger of the active
 profile during a drag, with a few colors to make everything more legible.
+"Guides only once a zone is hit" holds them back until the drag has actually
+reached a trigger, so a window moved around for any other reason leaves the
+edges alone; the first hit brings them up for the rest of that drag.
+
+**Windows' own snapping steps aside.** Dragging a window to a screen edge
+normally makes Windows draw its own grey preview and then place the window
+itself, competing with us for the same drop. While `docking_enabled` is on,
+windock turns that off for the session and restores it when docking is switched
+off or windock exits. The registry is never written, so an unclean exit costs
+you nothing beyond that session: the setting is back at your next sign-in, and
+can always be set by hand under Settings > System > Multitasking > Snap
+windows. Snap layouts (the grid on the maximize button) are a separate setting
+and are left alone.
 
 **Configuration preview** The configuration of (new) zones in WinDock was a bit complicated as a new user, so windock-go brings a bit of a visual upgrade.
 
@@ -148,6 +161,7 @@ Optional additions under `global_settings`:
 | `preview_alpha` | 150 | Preview opacity, 0-255. |
 | `show_trigger_guides` | true | Mark every trigger while dragging, highlighting the one under the cursor. |
 | `guide_thickness_px` | 10 | How thick guides are drawn. Presentation only. |
+| `guides_on_hit` | true | Hold the guides back until the drag actually enters a trigger. A drag that never reaches one then never lights the edges up; once one trigger has been hit they stay up for the rest of that drag. `false` marks every trigger from the moment the drag starts. |
 | `categorical_colors` | true | A colour per trigger. `false` uses `preview_color` everywhere. |
 
 `use_work_area` has been moved to individual zones. It is still read: on

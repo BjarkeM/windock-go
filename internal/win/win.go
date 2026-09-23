@@ -44,6 +44,7 @@ var (
 	procGetMonitorInfoW            = user32.NewProc("GetMonitorInfoW")
 	procSetLayeredWindowAttributes = user32.NewProc("SetLayeredWindowAttributes")
 	procGetAncestor                = user32.NewProc("GetAncestor")
+	procSystemParametersInfoW      = user32.NewProc("SystemParametersInfoW")
 	procSetProcessDpiAwarenessCtx  = user32.NewProc("SetProcessDpiAwarenessContext")
 	procGetThreadDpiAwarenessCtx   = user32.NewProc("GetThreadDpiAwarenessContext")
 	procGetAwarenessFromDpiCtx     = user32.NewProc("GetAwarenessFromDpiAwarenessContext")
@@ -431,6 +432,53 @@ func IsZoomed(hwnd HWND) bool {
 
 func ShowWindow(hwnd HWND, cmd int32) {
 	procShowWindow.Call(uintptr(hwnd), uintptr(cmd))
+}
+
+// --- window arrangement (Windows' own snapping) ---------------------------
+
+// SPI_*WINARRANGING is the per-user "Snap windows" setting: whether dragging a
+// window to a screen edge makes Windows preview and then snap it. It is the
+// same bit as HKCU\Control Panel\Desktop\WindowArrangementActive, but going
+// through SystemParametersInfo is what applies it to the running session.
+const (
+	SPI_GETWINARRANGING = 0x0082
+	SPI_SETWINARRANGING = 0x0083
+
+	SPIF_UPDATEINIFILE = 0x01
+	SPIF_SENDCHANGE    = 0x02
+)
+
+// WindowArranging reports whether Windows' own drag-to-edge snapping is on.
+// The second result is false if the setting could not be read at all, which is
+// not the same as it being off.
+func WindowArranging() (bool, bool) {
+	var on int32 // a Win32 BOOL
+	r, _, _ := procSystemParametersInfoW.Call(
+		SPI_GETWINARRANGING, 0, uintptr(unsafe.Pointer(&on)), 0)
+	if r == 0 {
+		return false, false
+	}
+	return on != 0, true
+}
+
+// SetWindowArranging turns Windows' own drag-to-edge snapping on or off for
+// this session.
+//
+// Note the asymmetry with the getter, which is how the API is defined: the get
+// takes a pointer to a BOOL, the set takes the boolean itself in the pvParam
+// slot.
+//
+// SPIF_UPDATEINIFILE is deliberately not passed, so the change is never
+// written to the registry: if we exit without restoring it, the user's setting
+// is back at their next sign-in rather than silently left off.
+func SetWindowArranging(on bool) bool {
+	var v uintptr
+	if on {
+		v = 1
+	}
+	r, _, _ := procSystemParametersInfoW.Call(
+		SPI_SETWINARRANGING, 0, v, SPIF_SENDCHANGE)
+	return r != 0
 }
 
 func GetCursorPos() POINT {

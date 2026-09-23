@@ -548,3 +548,32 @@ func TestWorkAreaIsPerZone(t *testing.T) {
 			byRule[0].WorkArea, byRule[1].WorkArea)
 	}
 }
+
+// --- matching, which is now what reveals the guides -------------------------
+
+// The guides come up on a hit, so a drag through open space must match nothing.
+func TestMatchIndexIgnoresTheMiddleOfTheScreen(t *testing.T) {
+	rules := fullScreen([]config.Rule{{
+		Dock:    config.Dock{Monitor: 0, Values: []float64{0, 0, 50, 100}},
+		Trigger: config.Trigger{Monitor: 0, Pos: config.PosLeft, Type: config.TypeEdge, Values: []float64{0, 100}},
+	}})
+	l := Resolve(rules, ultrawide(t), config.Global{})
+
+	center := win.POINT{X: uwWidth / 2, Y: uwHeight / 2}
+	if i := l.MatchIndex(center); i >= 0 {
+		t.Errorf("a cursor in the middle of the screen matched zone %d", i)
+	}
+}
+
+// A layout with no zones, and a nil one, must answer rather than panic: the
+// mouse hook calls this on every move.
+func TestMatchIndexHandlesAnEmptyLayout(t *testing.T) {
+	var nilLayout *Layout
+	if i := nilLayout.MatchIndex(win.POINT{}); i >= 0 {
+		t.Errorf("a nil layout matched zone %d", i)
+	}
+	empty := Resolve(nil, ultrawide(t), config.Global{})
+	if i := empty.MatchIndex(win.POINT{}); i >= 0 {
+		t.Errorf("an empty layout matched zone %d", i)
+	}
+}
