@@ -86,6 +86,13 @@ func Enable() error {
 // Disable removes the logon entry. Removing one that is not there is not an
 // error, so callers can use this to guarantee a state.
 func Disable() error {
+	if err := disableRunEntry(); err != nil {
+		return err
+	}
+	return DisableElevated()
+}
+
+func disableRunEntry() error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.SET_VALUE)
 	if err != nil {
 		if err == registry.ErrNotExist {
@@ -98,7 +105,7 @@ func Disable() error {
 	if err := k.DeleteValue(valueName); err != nil && err != registry.ErrNotExist {
 		return err
 	}
-	return DisableElevated()
+	return nil
 }
 
 // Set applies the requested state. Turning it on when the elevated task is
@@ -118,6 +125,10 @@ func Set(on bool) error {
 // IsStale reports whether the entry points somewhere other than the executable
 // running now. Re-enabling fixes it.
 func IsStale() (bool, error) {
+	// Never refresh a competing Run entry when the elevated task exists.
+	if elevated, _, err := ElevatedEnabled(); err != nil || elevated {
+		return false, err
+	}
 	// The Run entry only. A stale task is repointed by reinstalling, which is
 	// the only context that has the rights to rewrite it.
 	on, registered, err := runEntry()

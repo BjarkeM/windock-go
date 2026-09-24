@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 
+	"golang.org/x/sys/windows"
+
 	"github.com/BjarkeM/windock-go/internal/autostart"
 	"github.com/BjarkeM/windock-go/internal/config"
 	"github.com/BjarkeM/windock-go/internal/ui"
@@ -82,8 +84,11 @@ func cmdAutostart(args []string) error {
 		fmt.Printf("windock will start at logon:\n  %s\n", cmd)
 	case "elevated", "admin":
 		if err := autostart.EnableElevated(); err != nil {
-			return fmt.Errorf("%w\n\nRegistering the elevated logon entry needs administrator "+
-				"rights; run this from an elevated prompt", err)
+			if !windows.GetCurrentProcessToken().IsElevated() {
+				return fmt.Errorf("%w\n\nRegistering the elevated logon entry needs administrator "+
+					"rights; run this from an elevated prompt", err)
+			}
+			return err
 		}
 		cmd, _ := autostart.Command()
 		fmt.Printf("windock will start elevated at logon:\n  %s\n", cmd)

@@ -43,7 +43,9 @@ type App struct {
 	stopEng context.CancelFunc
 	engDone chan struct{}
 
-	settings *SettingsWindow
+	settings      *SettingsWindow
+	closing       bool
+	engineStopped bool
 }
 
 // Run shows the tray icon, starts the engine and pumps messages until the user
@@ -59,6 +61,8 @@ func Run(log *slog.Logger, cfgPath string, cfg *config.File, openSettings bool) 
 		return fmt.Errorf("creating the tray host window: %w", err)
 	}
 	a.window = w
+	defer w.Dispose()
+	w.Closing().Attach(a.onClosing)
 
 	// An installer asks the running copy to go before it replaces the
 	// executable. Close is what the Exit menu item does, so this shuts down the
@@ -397,6 +401,35 @@ func (a *App) showAbout() {
 		return
 	}
 	dlg.Run()
+}
+
+func (a *App) onClosing(canceled *bool, _ walk.CloseReason) {
+	if !a.engineStopped && a.stopEng != nil {
+		*canceled = true
+		a.requestExit()
+	}
+}
+
+// requestExit keeps the UI pumping while the engine restores Windows settings.
+// SystemParametersInfo broadcasts synchronously to this thread's windows, so
+// waiting for engDone after closing the host can deadlock (especially with the
+// settings window open). All close paths go through the host's Closing handler.
+func (a *App) requestExit() {
+	if a.closing {
+		return
+	}
+	a.closing = true
+	a.stopEng()
+	go func() {
+		<-a.engDone
+		a.window.Synchronize(func() {
+			a.engineStopped = true
+			if a.settings != nil && a.settings.Form != nil {
+				a.settings.Form.Dispose()
+			}
+			a.window.Close()
+		})
+	}()
 }
 
 // --- engine lifecycle -----------------------------------------------------

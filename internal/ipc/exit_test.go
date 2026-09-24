@@ -1,25 +1,19 @@
 package ipc
 
 import (
+	"fmt"
+	"os"
 	"testing"
 	"time"
 )
 
-// skipIfWinDockRunning keeps the tests off a real instance: they signal the
-// exit event by name, and a running tray would take that personally.
-func skipIfWinDockRunning(t *testing.T) {
-	t.Helper()
-	running, err := Running()
-	if err != nil {
-		t.Fatalf("Running: %v", err)
-	}
-	if running {
-		t.Skip("a copy of windock is running; skipping so the tests do not stop it")
-	}
+func TestMain(m *testing.M) {
+	exitEvent = fmt.Sprintf(`Local\WinDockGoExitTest-%d`, os.Getpid())
+	instanceMutexName = fmt.Sprintf(`Local\WinDockGoInstanceTest-%d`, os.Getpid())
+	os.Exit(m.Run())
 }
 
 func TestSignalExitReachesAListener(t *testing.T) {
-	skipIfWinDockRunning(t)
 
 	stopped := make(chan struct{})
 	l, err := Listen(func() { close(stopped) })
@@ -44,7 +38,6 @@ func TestSignalExitReachesAListener(t *testing.T) {
 }
 
 func TestSignalExitWithNothingRunning(t *testing.T) {
-	skipIfWinDockRunning(t)
 
 	running, err := SignalExit()
 	if err != nil {
@@ -58,7 +51,6 @@ func TestSignalExitWithNothingRunning(t *testing.T) {
 // Close must retire the waiting goroutine without it mistaking the shutdown for
 // an exit request, or an ordinary quit would call stop on the way out.
 func TestCloseDoesNotTriggerStop(t *testing.T) {
-	skipIfWinDockRunning(t)
 
 	stopped := make(chan struct{})
 	l, err := Listen(func() { close(stopped) })
@@ -75,7 +67,6 @@ func TestCloseDoesNotTriggerStop(t *testing.T) {
 }
 
 func TestWaitGoneReturnsWhenTheLockIsFree(t *testing.T) {
-	skipIfWinDockRunning(t)
 
 	if err := WaitGone(time.Second); err != nil {
 		t.Fatalf("WaitGone with no instance: %v", err)
@@ -83,7 +74,6 @@ func TestWaitGoneReturnsWhenTheLockIsFree(t *testing.T) {
 }
 
 func TestWaitGoneTimesOutWhileTheLockIsHeld(t *testing.T) {
-	skipIfWinDockRunning(t)
 
 	release := holdInstanceLock(t)
 	defer release()
@@ -97,5 +87,23 @@ func TestWaitGoneTimesOutWhileTheLockIsHeld(t *testing.T) {
 	}
 	if err := WaitGone(300 * time.Millisecond); err == nil {
 		t.Fatal("WaitGone returned while the lock was still held")
+	}
+}
+
+// Close must return only once the waiter no longer uses the event handles.
+// Repeated close/reopen exercises handle reuse that used to race the waiter.
+func TestListenerCloseAndRestart(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		l, err := Listen(func() { t.Error("unexpected stop during Close") })
+		if err != nil {
+			t.Fatal(err)
+		}
+		l.Close()
+		l.Close()
+		select {
+		case <-l.finished:
+		default:
+			t.Fatal("Close returned before the waiter finished")
+		}
 	}
 }

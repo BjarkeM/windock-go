@@ -10,7 +10,7 @@ import (
 // user's configuration exactly as they found it.
 
 func TestEnableDisableRoundTrip(t *testing.T) {
-	wasOn, original, err := Enabled()
+	wasOn, original, err := runEntry()
 	if err != nil {
 		t.Fatalf("reading the current state: %v", err)
 	}
@@ -23,13 +23,13 @@ func TestEnableDisableRoundTrip(t *testing.T) {
 			}
 			return
 		}
-		Disable()
+		disableRunEntry()
 	})
 
 	if err := Enable(); err != nil {
 		t.Fatalf("Enable: %v", err)
 	}
-	on, cmd, err := Enabled()
+	on, cmd, err := runEntry()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,16 +52,16 @@ func TestEnableDisableRoundTrip(t *testing.T) {
 		t.Error("a freshly written entry should not be reported as stale")
 	}
 
-	if err := Disable(); err != nil {
+	if err := disableRunEntry(); err != nil {
 		t.Fatalf("Disable: %v", err)
 	}
-	if on, _, _ := Enabled(); on {
+	if on, _, _ := runEntry(); on {
 		t.Error("Disable left the logon entry in place")
 	}
 }
 
 func TestDisableIsIdempotent(t *testing.T) {
-	wasOn, original, err := Enabled()
+	wasOn, original, err := runEntry()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,10 +75,10 @@ func TestDisableIsIdempotent(t *testing.T) {
 		}
 	})
 
-	if err := Disable(); err != nil {
+	if err := disableRunEntry(); err != nil {
 		t.Fatalf("first Disable: %v", err)
 	}
-	if err := Disable(); err != nil {
+	if err := disableRunEntry(); err != nil {
 		t.Fatalf("Disable on an absent entry must not fail: %v", err)
 	}
 }

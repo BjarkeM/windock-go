@@ -12,7 +12,9 @@ package ipc
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -22,17 +24,42 @@ const (
 	// WaitGone tells that a copy is still alive.
 	InstanceMutex = `Local\WinDockGoSingleInstance`
 
-	exitEvent = `Local\WinDockGoExit`
-
 	// Not all builds of x/sys export this one, and it is the only access
 	// right SignalExit needs.
 	eventModifyState = 0x0002
 )
 
+// Tests substitute private names so they never signal the user's running tray.
+var (
+	exitEvent         = `Local\WinDockGoExit`
+	instanceMutexName = InstanceMutex
+)
+
+// UserSecurityAttributes permits this user to communicate across elevation
+// levels. The medium integrity label lets a normal "windock exit" signal an
+// elevated tray; the DACL still limits access to this user and SYSTEM.
+func UserSecurityAttributes() (*windows.SecurityAttributes, error) {
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return nil, err
+	}
+	sd, err := windows.SecurityDescriptorFromString(
+		"D:P(A;;GA;;;SY)(A;;GA;;;" + user.User.Sid.String() + ")S:(ML;;NW;;;ME)")
+	if err != nil {
+		return nil, err
+	}
+	return &windows.SecurityAttributes{
+		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
+		SecurityDescriptor: sd,
+	}, nil
+}
+
 // Listener holds the exit event on behalf of a running copy.
 type Listener struct {
-	event windows.Handle
-	done  windows.Handle
+	event     windows.Handle
+	done      windows.Handle
+	finished  chan struct{}
+	closeOnce sync.Once
 }
 
 // Listen creates the exit event and calls stop once another process signals it.
@@ -47,7 +74,11 @@ func Listen(stop func()) (*Listener, error) {
 	}
 	// Manual reset: the signal is a one-way announcement, and nothing should
 	// be able to consume it before the waiter sees it.
-	event, err := windows.CreateEvent(nil, 1, 0, name)
+	sa, err := UserSecurityAttributes()
+	if err != nil {
+		return nil, fmt.Errorf("creating exit event security: %w", err)
+	}
+	event, err := windows.CreateEvent(sa, 1, 0, name)
 	if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		return nil, fmt.Errorf("creating the exit event: %w", err)
 	}
@@ -60,8 +91,9 @@ func Listen(stop func()) (*Listener, error) {
 		return nil, fmt.Errorf("creating the shutdown event: %w", err)
 	}
 
-	l := &Listener{event: event, done: done}
+	l := &Listener{event: event, done: done, finished: make(chan struct{})}
 	go func() {
+		defer close(l.finished)
 		n, err := windows.WaitForMultipleObjects(
 			[]windows.Handle{event, done}, false, windows.INFINITE)
 		if err == nil && n == windows.WAIT_OBJECT_0 {
@@ -73,9 +105,12 @@ func Listen(stop func()) (*Listener, error) {
 
 // Close releases the exit event.
 func (l *Listener) Close() {
-	windows.SetEvent(l.done)
-	windows.CloseHandle(l.event)
-	windows.CloseHandle(l.done)
+	l.closeOnce.Do(func() {
+		windows.SetEvent(l.done)
+		<-l.finished
+		windows.CloseHandle(l.event)
+		windows.CloseHandle(l.done)
+	})
 }
 
 // SignalExit asks a running copy to stop, reporting whether one was there to
@@ -126,7 +161,7 @@ func WaitGone(timeout time.Duration) error {
 func Running() (bool, error) { return instanceRunning() }
 
 func instanceRunning() (bool, error) {
-	name, err := windows.UTF16PtrFromString(InstanceMutex)
+	name, err := windows.UTF16PtrFromString(instanceMutexName)
 	if err != nil {
 		return false, err
 	}

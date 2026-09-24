@@ -56,13 +56,7 @@ Name: autostart; Description: "Start {#AppName} when I log on"
 Name: autostart\elevated; Description: "...with administrator rights, so it can also arrange windows of programs that run as administrator"
 
 [Run]
-; The plain entry writes to the installing user's HKCU, so it runs as that user.
-; The elevated one registers a scheduled task, which needs the administrator
-; rights the setup process is already holding - runasoriginaluser would break it.
-Filename: "{app}\{#AppExe}"; Parameters: "autostart on"; \
-    Tasks: autostart and not autostart\elevated; Flags: runhidden runasoriginaluser
-Filename: "{app}\{#AppExe}"; Parameters: "autostart elevated"; \
-    Tasks: autostart\elevated; Flags: runhidden
+; Startup is configured in CurStepChanged so failures are reported.
 
 ; Start it now the same way it will start from now on, so that what the user
 ; tries immediately after installing behaves like what they will get at logon.
@@ -72,7 +66,7 @@ Filename: "{app}\{#AppExe}"; Description: "Start {#AppName} now"; \
 Filename: "{sys}\schtasks.exe"; Parameters: "/Run /TN ""WinDock-Go"""; \
     Description: "Start {#AppName} now"; \
     Tasks: autostart\elevated; Check: NotAlreadyRunning; \
-    Flags: postinstall nowait skipifsilent runhidden
+    Flags: postinstall nowait skipifsilent runhidden runascurrentuser
 
 [UninstallRun]
 ; Removing the program implies closing it, so this one does not ask.
@@ -88,6 +82,7 @@ Filename: "{app}\{#AppExe}"; Parameters: "autostart off"; Flags: runhidden; RunO
 [Code]
 var
   OldCopyLeftRunning: Boolean;
+  StartupConfigured: Boolean;
 
 function InstalledExe: String;
 begin
@@ -113,6 +108,38 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
 begin
+  if CurStep = ssPostInstall then
+  begin
+    StartupConfigured := True;
+    if WizardIsTaskSelected('autostart\elevated') then
+    begin
+      if not Exec(InstalledExe, 'autostart elevated', '', SW_HIDE,
+                  ewWaitUntilTerminated, ResultCode) then
+        ResultCode := -1;
+      StartupConfigured := ResultCode = 0;
+    end
+    else if WizardIsTaskSelected('autostart') then
+    begin
+      // Remove a previous elevated task before selecting ordinary startup.
+      if not Exec(InstalledExe, 'autostart off', '', SW_HIDE,
+                  ewWaitUntilTerminated, ResultCode) then
+        ResultCode := -1;
+      StartupConfigured := ResultCode = 0;
+      if StartupConfigured then
+      begin
+        if not ExecAsOriginalUser(InstalledExe, 'autostart on', '', SW_HIDE,
+                                  ewWaitUntilTerminated, ResultCode) then
+          ResultCode := -1;
+        StartupConfigured := ResultCode = 0;
+      end;
+    end;
+    if not StartupConfigured then
+      MsgBox('WinDock-Go was installed, but its logon startup could not be configured.' +
+             '' + #13#10#13#10 + 'To see the error, open an administrator terminal and run:' +
+             '' + #13#10 + '"' + InstalledExe + '" autostart elevated', mbError, MB_OK);
+    Exit;
+  end;
+
   if CurStep <> ssInstall then
     Exit;
 
@@ -141,7 +168,7 @@ end;
 // produce the single-instance error.
 function NotAlreadyRunning: Boolean;
 begin
-  Result := not OldCopyLeftRunning;
+  Result := not OldCopyLeftRunning and StartupConfigured;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);

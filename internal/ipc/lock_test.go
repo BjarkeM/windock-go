@@ -9,7 +9,7 @@ import (
 // holdInstanceLock takes the single-instance mutex the way a running copy does.
 func holdInstanceLock(t *testing.T) func() {
 	t.Helper()
-	name, err := windows.UTF16PtrFromString(InstanceMutex)
+	name, err := windows.UTF16PtrFromString(instanceMutexName)
 	if err != nil {
 		t.Fatalf("UTF16PtrFromString: %v", err)
 	}

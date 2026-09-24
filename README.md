@@ -180,7 +180,17 @@ drag is still seen and the guides are still drawn; the snap silently does
 nothing. `windock autostart elevated`, from an elevated prompt, instead
 registers a scheduled task with the highest privileges, which starts windock
 elevated at logon without a UAC prompt each time. The installer offers it as a
-tick box.
+tick box. Registration replaces the ordinary Run entry so it cannot start an
+unelevated copy first. The task runs in the registering account's interactive
+session, including on battery power, with no execution time limit. Approve
+setup using your own administrator account; registering under a different
+administrator account targets that account's desktop.
+
+The installer reports startup registration failures. To repair an existing
+installation, reinstall and select both startup options, then choose **Start
+WinDock-Go now**. If an old copy is stuck after Exit, end that `windock.exe`
+process in Task Manager first. `windock diag` reports whether the command itself
+is elevated; Task Manager's **Elevated** column shows the running tray's status.
 
 ## Limitations
 

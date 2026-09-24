@@ -234,7 +234,11 @@ func claimSingleInstance() (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	h, err := windows.CreateMutex(nil, false, name)
+	sa, err := ipc.UserSecurityAttributes()
+	if err != nil {
+		return nil, err
+	}
+	h, err := windows.CreateMutex(sa, false, name)
 	if err != nil {
 		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 			if h != 0 {
@@ -258,6 +262,7 @@ func cmdDiag(path string) error {
 	}
 
 	mons := monitor.Enumerate()
+	fmt.Printf("Elevated: %v\n", windows.GetCurrentProcessToken().IsElevated())
 	fmt.Printf("Config:   %s\n", path)
 	fmt.Printf("Docking:  %v\n", cfg.GlobalSettings.DockingEnabled)
 	fmt.Printf("Profile:  %s\n", profileName(cfg))
